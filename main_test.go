@@ -7,4 +7,3 @@ func TestAdd(t *testing.T) {
 		t.Errorf("expected 5")
 	}
 }
-
