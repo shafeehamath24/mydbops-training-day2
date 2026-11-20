@@ -1,0 +1,5 @@
+tests/reports/test-output.txt
+tests/reports/test-results.json
+tests/reports/report.pdf
+tests/coverage.out
+tests/reports/coverage.out

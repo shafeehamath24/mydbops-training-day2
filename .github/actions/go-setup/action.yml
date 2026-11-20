@@ -1,0 +1,19 @@
+name: Common Go Setup
+description: Setup Go and configure private repo access
+
+inputs:
+  github-token:
+    description: GitHub token for private repo access
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Configure private repo access
+      shell: bash
+      run: git config --global url."https://${{ inputs.github-token }}@github.com/".insteadOf "https://github.com/"
