@@ -1,0 +1,443 @@
+name: Unit Tests
+
+env:
+  VET_CHECK: "true"
+  FMT_CHECK: "true"
+  STATICCHECK: "true"
+  ERRCHECK: "true"
+  GOSEC: "true"
+  GOVULNCHECK: "true"
+  MODTIDY: "true"
+  MISSPELL: "true"
+  TEST_CHECK: "true"
+  REPORT_GENERATE: "true"
+  PR_DESCRIPTION_UPDATE: "true"
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+
+  # ============================================================
+  # JOB 1 - GO VET
+  # ============================================================
+  go_vet_check:
+    name: Go Vet Check
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.vet.outputs.status }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Common Go setup
+        uses: ./.github/actions/go-setup
+        with:
+          github-token: ${{ secrets.MYDBOPS_GITHUB_TOKEN }}
+
+      - name: go vet
+        if: env.VET_CHECK == 'true'
+        id: vet
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              execSync('go vet ./...', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              core.setOutput('status', 'passed');
+              console.log('✅ No issues found');
+            } catch (e) {
+              core.setOutput('status', 'failed');
+              core.setFailed('❌ go vet failed:\n' + (e.stderr || e.stdout || e.message).trim());
+            }
+
+  # ============================================================
+  # JOB 2 - GOFMT
+  # ============================================================
+  go_fmt_check:
+    name: Go Format Check
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.fmt.outputs.status }}
+      count: ${{ steps.fmt.outputs.count }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Common Go setup
+        uses: ./.github/actions/go-setup
+        with:
+          github-token: ${{ secrets.MYDBOPS_GITHUB_TOKEN }}
+
+      - name: gofmt
+        if: env.FMT_CHECK == 'true'
+        id: fmt
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const output = execSync("gofmt -d . | grep -v '^vendor/' || true", { encoding: 'utf8' }).trim();
+            if (output) {
+              const count = output.split('\n').length;
+              core.setOutput('status', 'warning');
+              core.setOutput('count', count.toString());
+              console.log(`⚠️ ${count} unformatted files:\n${output}`);
+            } else {
+              core.setOutput('status', 'passed');
+              core.setOutput('count', '0');
+              console.log('✅ All files formatted');
+            }
+
+  # ============================================================
+  # JOB 3 - QUALITY CHECKS
+  # ============================================================
+  go_quality_checks:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+    outputs:
+      staticcheck_status: ${{ steps.staticcheck.outputs.status }}
+      errcheck_status: ${{ steps.errcheck.outputs.status }}
+      gosec_status: ${{ steps.gosec.outputs.status }}
+      govulncheck_status: ${{ steps.govulncheck.outputs.status }}
+      modtidy_status: ${{ steps.modtidy.outputs.status }}
+      misspell_status: ${{ steps.misspell.outputs.status }}
+      misspell_count: ${{ steps.misspell.outputs.count }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Common Go setup
+        uses: ./.github/actions/go-setup
+        with:
+          github-token: ${{ secrets.MYDBOPS_GITHUB_TOKEN }}
+
+      - name: Install quality tools
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install github.com/kisielk/errcheck@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/client9/misspell/cmd/misspell@latest
+
+      - name: staticcheck
+        if: env.STATICCHECK == 'true'
+        id: staticcheck
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              execSync('staticcheck ./...', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              core.setOutput('status', 'passed');
+            } catch (e) {
+              core.setOutput('status', 'failed');
+              core.setFailed('❌ staticcheck failed:\n' + (e.stderr || e.stdout || e.message).trim());
+            }
+
+      - name: errcheck
+        if: env.ERRCHECK == 'true'
+        id: errcheck
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              execSync('errcheck ./...', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              core.setOutput('status', 'passed');
+            } catch (e) {
+              core.setOutput('status', 'failed');
+              core.setFailed('❌ errcheck failed:\n' + (e.stderr || e.stdout || e.message).trim());
+            }
+
+      - name: gosec
+        if: env.GOSEC == 'true'
+        id: gosec
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              execSync('gosec -quiet ./...', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              core.setOutput('status', 'passed');
+            } catch (e) {
+              core.setOutput('status', 'failed');
+              core.setFailed('❌ gosec found issues:\n' + (e.stderr || e.stdout || e.message).trim());
+            }
+
+      - name: govulncheck
+        if: env.GOVULNCHECK == 'true'
+        id: govulncheck
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              execSync('govulncheck ./...', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+              core.setOutput('status', 'passed');
+            } catch (e) {
+              core.setOutput('status', 'failed');
+              core.setFailed('❌ Vulnerabilities found:\n' + (e.stderr || e.stdout || e.message).trim());
+            }
+
+      - name: go mod tidy
+        if: env.MODTIDY == 'true'
+        id: modtidy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const modBefore = fs.readFileSync('go.mod', 'utf8');
+            const sumBefore = fs.existsSync('go.sum') ? fs.readFileSync('go.sum', 'utf8') : '';
+            execSync('go mod tidy', { encoding: 'utf8' });
+            const modAfter = fs.readFileSync('go.mod', 'utf8');
+            const sumAfter = fs.existsSync('go.sum') ? fs.readFileSync('go.sum', 'utf8') : '';
+            if (modBefore !== modAfter || sumBefore !== sumAfter) {
+              core.setOutput('status', 'dirty');
+              core.setFailed('❌ go.mod/go.sum not tidy — run: go mod tidy');
+            } else {
+              core.setOutput('status', 'clean');
+              console.log('✅ go.mod/go.sum are tidy');
+            }
+
+      - name: misspell
+        if: env.MISSPELL == 'true'
+        id: misspell
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            try {
+              const output = execSync('misspell .', { encoding: 'utf8' }).trim();
+              if (output) {
+                const count = output.split('\n').length;
+                core.setOutput('status', 'warning');
+                core.setOutput('count', count.toString());
+                console.log(`⚠️ ${count} typos:\n${output}`);
+              } else {
+                core.setOutput('status', 'passed');
+                core.setOutput('count', '0');
+              }
+            } catch (e) {
+              core.setOutput('status', 'passed');
+              core.setOutput('count', '0');
+            }
+
+  # ============================================================
+  # JOB 4 - GO TEST (always runs, uses colocated tests)
+  # ============================================================
+  go_test_check:
+    name: Go Test Check
+    runs-on: ubuntu-latest
+    outputs:
+      total: ${{ steps.test.outputs.total }}
+      passed: ${{ steps.test.outputs.passed }}
+      failed: ${{ steps.test.outputs.failed }}
+      pkgs: ${{ steps.test.outputs.pkgs }}
+      exit_code: ${{ steps.test.outputs.exit }}
+      pkg_results: ${{ steps.test.outputs.pkg_results }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Common Go setup
+        uses: ./.github/actions/go-setup
+        with:
+          github-token: ${{ secrets.MYDBOPS_GITHUB_TOKEN }}
+
+      - name: go test
+        id: test
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            execSync('mkdir -p tests/reports');
+            let output = '';
+            let exitCode = 0;
+            try {
+              output = execSync('go test -v -count=1 ./... 2>&1', { encoding: 'utf8' });
+            } catch (e) {
+              output = e.stdout || '';
+              exitCode = e.status || 1;
+            }
+            fs.writeFileSync('tests/reports/test-output.txt', output);
+            const total = (output.match(/^--- PASS|^--- FAIL/gm) || []).length;
+            const passed = (output.match(/^--- PASS/gm) || []).length;
+            const failed = (output.match(/^--- FAIL/gm) || []).length;
+            const pkgs = (output.match(/^ok /gm) || []).length;
+            const pkgResults = output.split('\n').filter(l => l.startsWith('ok ') || l.startsWith('FAIL')).join('\n');
+            core.setOutput('total', total.toString());
+            core.setOutput('passed', passed.toString());
+            core.setOutput('failed', failed.toString());
+            core.setOutput('pkgs', pkgs.toString());
+            core.setOutput('exit', exitCode.toString());
+            core.setOutput('pkg_results', pkgResults);
+            if (failed > 0) {
+              core.setFailed(`❌ ${failed}/${total} tests failed`);
+            } else {
+              console.log(`✅ ${total} tests passed (${pkgs} packages)`);
+            }
+
+  # ============================================================
+  # JOB 5 - REPORT GENERATION
+  # ============================================================
+  go_test_report_generation:
+    name: Generate Test Report
+    runs-on: ubuntu-latest
+    needs: go_test_check
+    if: always()
+    steps:
+      - name: Checkout code
+        if: env.REPORT_GENERATE == 'true'
+        uses: actions/checkout@v4
+
+      - name: Update report test counts
+        if: env.REPORT_GENERATE == 'true'
+        env:
+          CI_TOTAL: ${{ needs.go_test_check.outputs.total }}
+          CI_PASSED: ${{ needs.go_test_check.outputs.passed }}
+          CI_FAILED: ${{ needs.go_test_check.outputs.failed }}
+        run: |
+          if [ ! -f tests/reports/report.html ]; then
+            echo "⚠️ tests/reports/report.html not found — skipping"
+            exit 0
+          fi
+          python3 << 'PYEOF'
+          import re, os
+          total = os.environ.get('CI_TOTAL', '0')
+          passed = os.environ.get('CI_PASSED', '0')
+          failed = os.environ.get('CI_FAILED', '0')
+          html = open('tests/reports/report.html').read()
+          html = re.sub(r'(<div class="(?:value|number)">)\d+(</div>\s*<div class="label">Total Tests)', rf'\g<1>{total}\2', html)
+          html = re.sub(r'(<div class="card pass">\s*<div class="(?:value|number)">)\d+(</div>\s*<div class="label">Passed)', rf'\g<1>{passed}\2', html)
+          html = re.sub(r'(<div class="card fail">\s*<div class="(?:value|number)">)\d+(</div>\s*<div class="label">Failed)', rf'\g<1>{failed}\2', html)
+          open('tests/reports/report.html', 'w').write(html)
+          print(f'Updated: total={total} passed={passed} failed={failed}')
+          PYEOF
+
+      - name: Convert HTML to PDF
+        if: env.REPORT_GENERATE == 'true'
+        run: |
+          if [ -f tests/reports/report.html ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq wkhtmltopdf > /dev/null 2>&1
+            wkhtmltopdf --page-size A4 --margin-top 15 --margin-bottom 15 \
+              --margin-left 15 --margin-right 15 \
+              tests/reports/report.html tests/reports/report.pdf || true
+          fi
+
+      - name: Upload PDF report
+        if: env.REPORT_GENERATE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: tests/reports/report.pdf
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ============================================================
+  # JOB 6 - UPDATE PR DESCRIPTION
+  # ============================================================
+  go_update_pr_description:
+    name: Update PR Description
+    runs-on: ubuntu-latest
+    needs:
+      - go_vet_check
+      - go_fmt_check
+      - go_quality_checks
+      - go_test_check
+      - go_test_report_generation
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Update PR description
+        if: env.PR_DESCRIPTION_UPDATE == 'true'
+        uses: actions/github-script@v7
+        env:
+          VET_STATUS: ${{ needs.go_vet_check.outputs.status }}
+          FMT_STATUS: ${{ needs.go_fmt_check.outputs.status }}
+          FMT_COUNT: ${{ needs.go_fmt_check.outputs.count }}
+          STATICCHECK_STATUS: ${{ needs.go_quality_checks.outputs.staticcheck_status }}
+          ERRCHECK_STATUS: ${{ needs.go_quality_checks.outputs.errcheck_status }}
+          GOSEC_STATUS: ${{ needs.go_quality_checks.outputs.gosec_status }}
+          GOVULNCHECK_STATUS: ${{ needs.go_quality_checks.outputs.govulncheck_status }}
+          MODTIDY_STATUS: ${{ needs.go_quality_checks.outputs.modtidy_status }}
+          MISSPELL_STATUS: ${{ needs.go_quality_checks.outputs.misspell_status }}
+          MISSPELL_COUNT: ${{ needs.go_quality_checks.outputs.misspell_count }}
+          TEST_TOTAL: ${{ needs.go_test_check.outputs.total }}
+          TEST_PASSED: ${{ needs.go_test_check.outputs.passed }}
+          TEST_FAILED: ${{ needs.go_test_check.outputs.failed }}
+          TEST_PKGS: ${{ needs.go_test_check.outputs.pkgs }}
+          TEST_EXIT: ${{ needs.go_test_check.outputs.exit_code }}
+          PKG_RESULTS: ${{ needs.go_test_check.outputs.pkg_results }}
+        with:
+          script: |
+            const fs = require('fs');
+            const e = process.env;
+            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const ok = e.TEST_FAILED === '0' && e.TEST_EXIT === '0';
+
+            let prDesc = '';
+            try {
+              prDesc = fs.readFileSync('.github/pr-description.md', 'utf8');
+            } catch (err) {
+              prDesc = '*No PR description generated.*';
+            }
+
+            const checks = [
+              { name: 'go vet',       status: e.VET_STATUS,          type: 'pass_fail' },
+              { name: 'gofmt',        status: e.FMT_STATUS,          count: e.FMT_COUNT,      type: 'warn_count', unit: 'files' },
+              { name: 'staticcheck',  status: e.STATICCHECK_STATUS,  type: 'pass_fail' },
+              { name: 'errcheck',     status: e.ERRCHECK_STATUS,     type: 'pass_fail' },
+              { name: 'gosec',        status: e.GOSEC_STATUS,        type: 'pass_fail' },
+              { name: 'govulncheck',  status: e.GOVULNCHECK_STATUS,  type: 'pass_fail' },
+              { name: 'go mod tidy',  status: e.MODTIDY_STATUS,      type: 'clean_dirty' },
+              { name: 'misspell',     status: e.MISSPELL_STATUS,     count: e.MISSPELL_COUNT, type: 'warn_count', unit: 'typos' },
+            ];
+
+            let body = prDesc + '\n\n---\n\n## CI Results\n\n';
+            body += `| Check | Result |\n|---|---|\n`;
+
+            for (const c of checks) {
+              if (!c.status) {
+                body += `| ${c.name} | ⏭ skipped |\n`;
+              } else if (c.type === 'pass_fail') {
+                body += `| ${c.name} | ${c.status === 'passed' ? '✅ passed' : '❌ failed'} |\n`;
+              } else if (c.type === 'clean_dirty') {
+                body += `| ${c.name} | ${c.status === 'clean' ? '✅ clean' : '❌ dirty'} |\n`;
+              } else if (c.type === 'warn_count') {
+                body += `| ${c.name} | ${c.status === 'passed' ? '✅ passed' : '⚠️ ' + (c.count||'0') + ' ' + c.unit} |\n`;
+              }
+            }
+            body += `| unit tests | ${ok ? '✅' : '❌'} ${e.TEST_PASSED||'0'}/${e.TEST_TOTAL||'0'} passed (${e.TEST_PKGS||'0'} packages) |\n\n`;
+
+            if ((e.TEST_TOTAL||'0') !== '0') {
+              body += `### Test Summary\n\n| Metric | Value |\n|---|---|\n`;
+              body += `| Total | ${e.TEST_TOTAL} |\n| Passed | ${e.TEST_PASSED} |\n| Failed | ${e.TEST_FAILED} |\n| Packages | ${e.TEST_PKGS} |\n\n`;
+            }
+
+            const pkgResults = e.PKG_RESULTS || '';
+            if (pkgResults.trim()) {
+              body += `<details><summary>Package details</summary>\n\n\`\`\`\n${pkgResults.trim()}\n\`\`\`\n</details>\n\n`;
+            }
+
+            body += `📄 [Download test report (PDF)](${url})\n\n`;
+            body += `---\n*PR description by Claude Code • CI by unit-test workflow*\n`;
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: body,
+            });
+            console.log('✅ PR description updated');
